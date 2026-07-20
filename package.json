@@ -1,0 +1,102 @@
+{
+  "name": "react-prop-tracer",
+  "displayName": "React Prop Tracer",
+  "description": "Trace where a React prop's value comes from and where it flows to, as a clickable tree.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCommand:reactPropTracer.traceAtCursor",
+    "onCommand:reactPropTracer.refresh",
+    "onCommand:reactPropTracer.clear",
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "reactPropTracer.traceAtCursor",
+        "title": "React Prop Tracer: Trace Prop at Cursor"
+      },
+      {
+        "command": "reactPropTracer.refresh",
+        "title": "React Prop Tracer: Refresh Last Trace"
+      },
+      {
+        "command": "reactPropTracer.clear",
+        "title": "React Prop Tracer: Clear Trace"
+      }
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "reactPropTracer",
+          "title": "Prop Tracer",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "reactPropTracer": [
+        {
+          "id": "reactPropTracer.traceView",
+          "type": "webview",
+          "name": "Trace"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "reactPropTracer.traceAtCursor",
+          "group": "navigation@50",
+          "when": "editorTextFocus && (editorLangId == typescriptreact || editorLangId == javascriptreact || editorLangId == typescript || editorLangId == javascript)"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "reactPropTracer.traceAtCursor",
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t",
+        "when": "editorTextFocus && (editorLangId == typescriptreact || editorLangId == javascriptreact || editorLangId == typescript || editorLangId == javascript)"
+      }
+    ],
+    "configuration": {
+      "title": "React Prop Tracer",
+      "properties": {
+        "reactPropTracer.maxDepth": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 32,
+          "description": "Maximum number of component hops to follow when tracing a prop downstream."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/build-and-run.js",
+    "vscode:prepublish": "node esbuild.js --production"
+  },
+  "dependencies": {
+    "typescript": "^5.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.23.0"
+  }
+}

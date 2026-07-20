@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "preserve",
+    "strict": false,
+    "noImplicitAny": false,
+    "noEmit": true,
+    "noUnusedLocals": false
+  },
+  "include": ["*.tsx", "*.ts", "*.d.ts"]
+}

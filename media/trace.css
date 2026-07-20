@@ -1,0 +1,174 @@
+:root {
+  --rpt-indent: 14px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--vscode-foreground);
+  background: transparent;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+/* ---------------------------------------------------------------- toolbar */
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  position: sticky;
+  top: 0;
+  background: var(--vscode-sideBar-background, var(--vscode-panel-background, transparent));
+  z-index: 1;
+}
+
+#toolbar-title {
+  flex: 1;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+#toolbar button {
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 3px;
+  padding: 2px 10px;
+  cursor: pointer;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.15));
+  font-family: inherit;
+  font-size: inherit;
+}
+
+#toolbar button:hover {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.3));
+}
+
+/* ---------------------------------------------------------------- content */
+
+#content {
+  padding: 6px 8px 16px;
+}
+
+.empty {
+  padding: 12px 6px;
+  opacity: 0.7;
+}
+
+.warnings {
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+}
+
+.warning {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  padding: 1px 0;
+}
+
+/* ------------------------------------------------------------------- tree */
+
+.section-title {
+  margin: 8px 0 2px;
+  font-size: 0.85em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+
+.node .children {
+  margin-left: var(--rpt-indent);
+  padding-left: 6px;
+  border-left: 1px solid var(--vscode-tree-indentGuidesStroke, rgba(128, 128, 128, 0.35));
+}
+
+.node.collapsed > .children {
+  display: none;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
+}
+
+.twisty {
+  width: 12px;
+  flex: none;
+  opacity: 0.6;
+  user-select: none;
+}
+
+.twisty.leaf {
+  opacity: 0.25;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.value {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.92em;
+  color: var(--vscode-textPreformat-foreground, inherit);
+  opacity: 0.9;
+}
+
+.reason {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  font-style: italic;
+}
+
+.file {
+  margin-left: auto;
+  opacity: 0.55;
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.snippet {
+  flex-basis: 100%;
+  margin-left: 18px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.88em;
+  opacity: 0.55;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------------------------------------- kind badges */
+
+.badge {
+  flex: none;
+  font-size: 0.75em;
+  font-weight: 600;
+  padding: 0 6px;
+  border-radius: 8px;
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+  white-space: nowrap;
+}
+
+.badge.k-selection        { background: var(--vscode-charts-purple, #b180d7); color: #fff; }
+.badge.k-state-hook       { background: var(--vscode-charts-blue, #3794ff); color: #fff; }
+.badge.k-hook             { background: var(--vscode-charts-blue, #3794ff); color: #fff; opacity: 0.8; }
+.badge.k-local-variable   { background: var(--vscode-charts-green, #89d185); color: #1e1e1e; }
+.badge.k-import           { background: var(--vscode-charts-yellow, #cca700); color: #1e1e1e; }
+.badge.k-from-parent-prop { background: var(--vscode-charts-orange, #d18616); color: #fff; }
+.badge.k-received-param   { background: var(--vscode-charts-green, #89d185); color: #1e1e1e; }
+.badge.k-props-access     { background: var(--vscode-charts-green, #89d185); color: #1e1e1e; opacity: 0.85; }
+.badge.k-re-passed-prop   { background: var(--vscode-charts-orange, #d18616); color: #fff; }
+.badge.k-component-definition { background: var(--vscode-charts-purple, #b180d7); color: #fff; opacity: 0.85; }
+.badge.k-unresolved       { background: var(--vscode-charts-red, #f14c4c); color: #fff; }
