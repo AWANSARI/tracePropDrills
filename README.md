@@ -42,9 +42,16 @@ Three cursor placements are recognized:
    `count`) — traces that one prop both ways.
 2. **On a component tag** (cursor on `Child`) — traces all props of the
    element.
-3. **Inside the receiving component's props** (`{ value }` in the params, or a
-   `props.value` access) — traces upstream to parent call sites and downstream
-   to any further drilling.
+3. **Inside the receiving component's props** (`{ value }` in the params, a
+   `props.value` access, or a body rebind like `const { value } = props` /
+   `const v = props.value`) — traces upstream to parent call sites and
+   downstream to any further drilling.
+
+Rebinds and redefines are followed in both directions: a prop extracted in
+the body (`const { a } = props`), renamed (`const { a: x } = props`,
+`const heading = props.title`), or derived (`const doubled = a + a`) is still
+recognized as coming from the parent, and passing the rebound name onward
+still counts as drilling the original prop.
 
 Other commands: **Refresh Last Trace** (also the Refresh button in the view's
 toolbar) and **Clear Trace**.
@@ -114,9 +121,10 @@ dynamic tags, missing definitions — never throw; each surfaces as a labeled
 
 ## Samples & tests
 
-The five acceptance fixtures live in `samples/` (A: state origin, B: multi-hop
-drilling, C: renamed prop, D: `props.x` access, E: spread degradation), each
-with a comment saying where to put the cursor and what to expect.
+The acceptance fixtures live in `samples/` (A: state origin, B: multi-hop
+drilling, C: renamed prop, D: `props.x` access, E: spread degradation,
+F: body destructures/renames/redefines), each with a comment saying where to
+put the cursor and what to expect.
 
 ```bash
 npm test          # runs the tracer against all five fixtures in plain Node
@@ -136,6 +144,7 @@ fixtures are single-file, so every trace completes end to end.
 
 - Context providers, HOC internals, and dynamically computed tags surface as
   `unresolved` nodes rather than being traced through.
-- Upstream "from parent prop" recursion is bounded to one hop.
+- Upstream "from parent prop" recursion is bounded to one hop, and redefine
+  chains (`const c = a`) are followed at most 3 levels deep.
 - Scope resolution for origin classification is simplified lexical scoping;
   the definition provider remains the authority for locations.

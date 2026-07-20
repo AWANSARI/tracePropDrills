@@ -136,6 +136,49 @@ async function main(): Promise<void> {
   check('spread yields an unresolved node with reason "spread props"', spreadNode !== undefined, describeTree(e.root));
   check('spread node shows rest as its source', spreadNode?.valueText === 'rest');
 
+  // --- F: body rebinds (destructure / rename / redefine) --------------------
+  console.log('Fixture F — body rebinds');
+  const f1 = await traceAt('F_body_rebinds.tsx', 'c={a}', 'a');
+  const flatF1 = flatten(f1.root);
+  check(
+    'value from a body destructure is recognized as a parent prop',
+    flatF1.some((n) => n.kind === 'from-parent-prop' && n.label.startsWith('a')),
+    describeTree(f1.root)
+  );
+
+  const f2 = await traceAt('F_body_rebinds.tsx', 'const { a } = props', 'a');
+  const flatF2 = flatten(f2.root);
+  check(
+    'cursor on the body destructure traces the child-side prop',
+    f2.root.kind === 'selection' &&
+      flatF2.some((n) => n.kind === 're-passed-prop' && n.label === 'c → <Component3>'),
+    describeTree(f2.root)
+  );
+  check(
+    'body destructure trace reaches Component3',
+    flatF2.some((n) => n.kind === 'component-definition' && n.label === 'Component3')
+  );
+
+  const f3 = await traceAt('F_body_rebinds.tsx', 'title={t}', 'title');
+  const flatF3 = flatten(f3.root);
+  check(
+    'props.title reception is found despite the rebind',
+    flatF3.some((n) => n.kind === 'props-access' && n.label === 'props.title')
+  );
+  check(
+    'downstream follows const heading = props.title into <Header>',
+    flatF3.some((n) => n.kind === 'component-definition' && n.label === 'Header'),
+    describeTree(f3.root)
+  );
+
+  const f4 = await traceAt('F_body_rebinds.tsx', 'd={doubled}', 'doubled');
+  const flatF4 = flatten(f4.root);
+  check(
+    'redefine chain doubled → a still reaches the parent prop',
+    flatF4.some((n) => n.kind === 'from-parent-prop'),
+    describeTree(f4.root)
+  );
+
   console.log(`\n${passes} passed, ${failures} failed`);
   process.exitCode = failures > 0 ? 1 : 0;
 }

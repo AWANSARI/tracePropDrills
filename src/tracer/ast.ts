@@ -587,7 +587,91 @@ export function findJsxSpreadOf(
   return found;
 }
 
+// ---------------------------------------------------------------------------
+// Props rebinds (destructures / renames / redefines in the body)
+// ---------------------------------------------------------------------------
+
+export interface PropsAliasDerivation {
+  /** The identifier of the props object the value came from (e.g. `props`). */
+  propsIdentifier: ts.Identifier;
+  /** Original prop name on the component. */
+  propName: string;
+  /** The local name it was rebound to. */
+  localName: string;
+  /** The binding element or variable declaration to point at. */
+  bindingNode: ts.Node;
+}
+
+/**
+ * If `decl` rebinds a prop out of a props object — `const { a } = props`,
+ * `const { a: x } = props`, or `const x = props.a` — return the derivation
+ * for the local name `matchName`. The caller still has to verify that
+ * `propsIdentifier` really resolves to a component's props parameter.
+ */
+export function propsAliasFromDeclaration(
+  decl: ts.VariableDeclaration,
+  matchName: string
+): PropsAliasDerivation | undefined {
+  const init = decl.initializer;
+  if (!init) {
+    return undefined;
+  }
+  // const { a } = props / const { a: x } = props
+  if (ts.isObjectBindingPattern(decl.name) && ts.isIdentifier(init)) {
+    for (const el of decl.name.elements) {
+      if (el.dotDotDotToken) {
+        continue;
+      }
+      if (ts.isIdentifier(el.name) && el.name.text === matchName) {
+        const propName = el.propertyName ? el.propertyName.getText() : matchName;
+        return { propsIdentifier: init, propName, localName: matchName, bindingNode: el };
+      }
+    }
+    return undefined;
+  }
+  // const x = props.a
+  if (
+    ts.isIdentifier(decl.name) &&
+    decl.name.text === matchName &&
+    ts.isPropertyAccessExpression(init) &&
+    ts.isIdentifier(init.expression)
+  ) {
+    return {
+      propsIdentifier: init.expression,
+      propName: init.name.text,
+      localName: matchName,
+      bindingNode: decl,
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Walk up from a binding element to the VariableDeclaration that owns it.
+ * Returns undefined for binding elements that live in parameters.
+ */
+export function owningVariableDeclaration(
+  el: ts.BindingElement
+): ts.VariableDeclaration | undefined {
+  let cur: ts.Node | undefined = el;
+  while (cur && !ts.isSourceFile(cur)) {
+    if (ts.isVariableDeclaration(cur)) {
+      return cur;
+    }
+    if (ts.isParameter(cur) || isFunctionLike(cur)) {
+      return undefined;
+    }
+    cur = cur.parent;
+  }
+  return undefined;
+}
+
 export type ExpressionMatcher = (expr: ts.Expression) => boolean;
+
+/** Combine matchers: matches when any of them matches. */
+export function anyMatcher(...matchers: ExpressionMatcher[]): ExpressionMatcher {
+  return (expr) => matchers.some((matcher) => matcher(expr));
+}
 
 /** Matches expressions whose root identifiers include `name` (e.g. `user`, `user.name`). */
 export function identifierMatcher(name: string): ExpressionMatcher {

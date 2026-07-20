@@ -2,7 +2,7 @@
   "name": "react-prop-tracer",
   "displayName": "React Prop Tracer",
   "description": "Trace where a React prop's value comes from and where it flows to, as a clickable tree.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "local",
   "private": true,
   "repository": {

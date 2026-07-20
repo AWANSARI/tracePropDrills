@@ -5,6 +5,7 @@ import { TraceNode, TraceResult } from '../types';
 import {
   FunctionLikeNode,
   JsxOpeningLike,
+  anyMatcher,
   attrName,
   attrValueExpression,
   attributeElement,
@@ -28,8 +29,10 @@ import {
   isLiteralExpression,
   jsxTagFromNode,
   locationOf,
+  owningVariableDeclaration,
   parse,
   propsAccessMatcher,
+  propsAliasFromDeclaration,
   rootIdentifiers,
   snippetOf,
   spreadAttributeElement,
@@ -49,6 +52,9 @@ const SUPPORTED_LANGUAGES = new Set([
   'typescript',
   'typescriptreact',
 ]);
+
+/** How many `const c = a` redefine hops to follow when classifying origins. */
+const MAX_UPSTREAM_CHAIN = 3;
 
 /** Static React prop tracing (Phase 1). See LanguageTracer for the language seam. */
 export class ReactTracer implements LanguageTracer {
@@ -284,29 +290,62 @@ class TraceSession {
       }
     }
 
-    // Cursor on a destructured prop binding — `{ value }` / `{ label: text }`
-    // in the params — or on a body identifier that resolves to one.
-    const decl = ts.isBindingElement(parent)
-      ? this.bindingElementDecl(parent)
-      : findDeclaration(node, node.text);
+    // Cursor directly on a binding element name — either a destructured
+    // param (`function C({ value })`) or a body rebind (`const { a } = props`).
+    if (ts.isBindingElement(parent)) {
+      const paramDecl = this.bindingElementDecl(parent);
+      if (paramDecl) {
+        return this.childBindingFromParam(sf, paramDecl);
+      }
+      const varDecl = owningVariableDeclaration(parent);
+      if (varDecl && ts.isIdentifier(parent.name)) {
+        const derived = this.propsDerivation(varDecl, parent.name.text);
+        if (derived) {
+          return this.childBindingFromDerivation(derived);
+        }
+      }
+      return undefined;
+    }
+
+    // Cursor on a body identifier: resolve its declaration — a destructured
+    // param, or a variable that rebinds a prop (`const { a } = props`,
+    // `const x = props.a`).
+    const decl = findDeclaration(node, node.text);
     if (decl?.kind === 'param' && decl.bindingElement) {
-      const owner = this.componentOwningParam(decl.fn, decl.param);
-      if (owner) {
-        const el = decl.bindingElement;
-        const local = el.name.getText(sf);
-        const propName = el.propertyName ? el.propertyName.getText(sf) : local;
-        return {
-          propName,
-          fn: decl.fn,
-          componentName: owner,
-          bindingNode: el,
-          receptionKind: 'received-param',
-          alias: el.propertyName ? local : undefined,
-          matcher: identifierMatcher(local),
-        };
+      return this.childBindingFromParam(sf, decl);
+    }
+    if (decl?.kind === 'variable') {
+      const derived = this.propsDerivation(decl.node, node.text);
+      if (derived) {
+        return this.childBindingFromDerivation(derived);
       }
     }
     return undefined;
+  }
+
+  private childBindingFromParam(
+    sf: ts.SourceFile,
+    decl: { fn: FunctionLikeNode; param: ts.ParameterDeclaration; bindingElement?: ts.BindingElement }
+  ): ChildPropBinding | undefined {
+    if (!decl.bindingElement) {
+      return undefined;
+    }
+    const owner = this.componentOwningParam(decl.fn, decl.param);
+    if (!owner) {
+      return undefined;
+    }
+    const el = decl.bindingElement;
+    const local = el.name.getText(sf);
+    const propName = el.propertyName ? el.propertyName.getText(sf) : local;
+    return {
+      propName,
+      fn: decl.fn,
+      componentName: owner,
+      bindingNode: el,
+      receptionKind: 'received-param',
+      alias: el.propertyName ? local : undefined,
+      matcher: identifierMatcher(local),
+    };
   }
 
   /** Wrap a binding element the cursor sits on as a DeclInfo-shaped result. */
@@ -340,6 +379,63 @@ class TraceSession {
     }
     const name = functionName(fn);
     return name && /^[A-Z]/.test(name.text) ? name : undefined;
+  }
+
+  /**
+   * If a variable declaration rebinds a prop out of a component's props
+   * object — `const { a } = props`, `const { a: x } = props`, or
+   * `const x = props.a` — resolve which component and prop it came from.
+   * This is what keeps the drill chain intact across renames/redefines.
+   */
+  private propsDerivation(
+    decl: ts.VariableDeclaration,
+    matchName: string
+  ):
+    | {
+        owner: ts.Identifier;
+        fn: FunctionLikeNode;
+        propName: string;
+        localName: string;
+        bindingNode: ts.Node;
+      }
+    | undefined {
+    const alias = propsAliasFromDeclaration(decl, matchName);
+    if (!alias) {
+      return undefined;
+    }
+    const propsDecl = findDeclaration(alias.propsIdentifier, alias.propsIdentifier.text);
+    if (propsDecl?.kind !== 'param' || propsDecl.bindingElement) {
+      return undefined;
+    }
+    const owner = this.componentOwningParam(propsDecl.fn, propsDecl.param);
+    if (!owner) {
+      return undefined;
+    }
+    return {
+      owner,
+      fn: propsDecl.fn,
+      propName: alias.propName,
+      localName: alias.localName,
+      bindingNode: alias.bindingNode,
+    };
+  }
+
+  private childBindingFromDerivation(derived: {
+    owner: ts.Identifier;
+    fn: FunctionLikeNode;
+    propName: string;
+    localName: string;
+    bindingNode: ts.Node;
+  }): ChildPropBinding {
+    return {
+      propName: derived.propName,
+      fn: derived.fn,
+      componentName: derived.owner,
+      bindingNode: derived.bindingNode,
+      receptionKind: 'received-param',
+      alias: derived.localName !== derived.propName ? derived.localName : undefined,
+      matcher: identifierMatcher(derived.localName),
+    };
   }
 
   private async traceFromChild(
@@ -395,6 +491,25 @@ class TraceSession {
     return this.result(root);
   }
 
+  /**
+   * Whether an initializer is a simple derivation worth chaining through.
+   * Calls (`getUser()`), functions, JSX, and literals are origins in their
+   * own right — chaining into them would be noise.
+   */
+  private isChainable(expr: ts.Expression): boolean {
+    return !(
+      ts.isCallExpression(expr) ||
+      ts.isNewExpression(expr) ||
+      ts.isArrowFunction(expr) ||
+      ts.isFunctionExpression(expr) ||
+      ts.isClassExpression(expr) ||
+      ts.isJsxElement(expr) ||
+      ts.isJsxSelfClosingElement(expr) ||
+      ts.isJsxFragment(expr) ||
+      isLiteralExpression(expr)
+    );
+  }
+
   // -------------------------------------------------------------------------
   // Upstream (origin) resolution
   // -------------------------------------------------------------------------
@@ -420,7 +535,8 @@ class TraceSession {
     doc: vscode.TextDocument,
     sf: ts.SourceFile,
     identifier: ts.Identifier,
-    allowParentHop: boolean
+    allowParentHop: boolean,
+    chainDepth = 0
   ): Promise<TraceNode> {
     const name = identifier.text;
     const decl = findDeclaration(identifier, name);
@@ -453,13 +569,34 @@ class TraceSession {
 
     switch (decl.kind) {
       case 'variable': {
+        // Rebind of a prop? `const { a } = props` / `const { a: x } = props`
+        // / `const x = props.a` — classify as from-parent-prop so the drill
+        // chain survives the rename instead of dead-ending at a "local".
+        const derived = this.propsDerivation(decl.node, name);
+        if (derived) {
+          const node = this.node({
+            label: `${name} (prop '${derived.propName}' of <${derived.owner.text}>)`,
+            kind: 'from-parent-prop',
+            direction: 'upstream',
+            location: locationOf(sf, derived.bindingNode),
+            snippet: snippetOf(sf, derived.bindingNode),
+            valueText: derived.propName !== name ? `props.${derived.propName} → ${name}` : undefined,
+          });
+          if (allowParentHop) {
+            node.children.push(
+              ...(await this.parentPassSites(doc, sf, derived.fn, derived.owner.text, derived.propName))
+            );
+          }
+          return node;
+        }
+
         const kind =
           decl.hookName === undefined
             ? 'local-variable'
             : decl.hookName === 'useState'
               ? 'state-hook'
               : 'hook';
-        return this.node({
+        const variableNode = this.node({
           label: decl.hookName ? `${name} · ${decl.hookName}` : name,
           kind,
           direction: 'upstream',
@@ -467,6 +604,22 @@ class TraceSession {
           snippet: snippetOf(sf, decl.node),
           valueText: decl.node.initializer?.getText(sf).slice(0, 80),
         });
+
+        // Redefine chaining: `const doubled = a + a` should still lead back
+        // to wherever `a` came from. Hooks and calls are origins in their own
+        // right, so only simple derivations chain, bounded by depth.
+        const init = decl.node.initializer;
+        if (!decl.hookName && init && chainDepth < MAX_UPSTREAM_CHAIN && this.isChainable(init)) {
+          for (const rootId of rootIdentifiers(init).slice(0, 4)) {
+            if (rootId.text === name) {
+              continue;
+            }
+            variableNode.children.push(
+              await this.traceUpstreamIdentifier(doc, sf, rootId, allowParentHop, chainDepth + 1)
+            );
+          }
+        }
+        return variableNode;
       }
 
       case 'function':
@@ -810,16 +963,35 @@ class TraceSession {
 
       const accesses = findPropsAccesses(component, propsName, propName);
       if (accesses.length > 0) {
+        // `const heading = props.title` — track the rebound names too, so
+        // passing `heading` onward still counts as drilling `title`.
+        const aliasNames: string[] = [];
+        for (const access of accesses) {
+          const holder = access.parent;
+          if (
+            ts.isVariableDeclaration(holder) &&
+            holder.initializer === access &&
+            ts.isIdentifier(holder.name)
+          ) {
+            aliasNames.push(holder.name.text);
+          }
+        }
+        const matcher =
+          aliasNames.length > 0
+            ? anyMatcher(
+                propsAccessMatcher(propsName, propName),
+                ...aliasNames.map((alias) => identifierMatcher(alias))
+              )
+            : propsAccessMatcher(propsName, propName);
         const node = this.node({
           label: `${propsName}.${propName}`,
           kind: 'props-access',
           direction: 'downstream',
           location: locationOf(sf, accesses[0]),
           snippet: snippetOf(sf, accesses[0]),
+          valueText: aliasNames.length > 0 ? `rebound as '${aliasNames.join("', '")}'` : undefined,
         });
-        node.children.push(
-          ...(await this.rePassNodes(doc, sf, component, propsAccessMatcher(propsName, propName), depth, visited))
-        );
+        node.children.push(...(await this.rePassNodes(doc, sf, component, matcher, depth, visited)));
         return [node];
       }
 
